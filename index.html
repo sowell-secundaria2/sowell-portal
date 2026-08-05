@@ -40,6 +40,8 @@
     .topbar-nav { display: flex; gap: 2px; }
     .nav-item { color: rgba(255,255,255,0.7); font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer; border: none; background: transparent; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
     .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.16); color: #fff; }
+    .hamburger-btn { display: none; background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+    .hamburger-btn:hover { background: rgba(255,255,255,0.12); }
     .user-pill { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.1); border-radius: 20px; padding: 4px 12px 4px 5px; cursor: pointer; position: relative; }
     .user-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; color: #fff; overflow: hidden; }
     .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -194,7 +196,23 @@
     .sanc-badge-grave { background: var(--red-light); color: #501313; }
     .sanc-badge-otra { background: var(--purple-light); color: #26215C; }
     @media (max-width: 720px) {
-      .topbar-nav { display: none; }
+      .hamburger-btn { display: flex; align-items: center; }
+      .topbar { position: sticky; }
+      .topbar-nav {
+        display: none;
+        position: absolute;
+        top: 56px;
+        left: 0;
+        right: 0;
+        background: var(--navy);
+        flex-direction: column;
+        gap: 0;
+        padding: 8px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+        z-index: 99;
+      }
+      .topbar-nav.mobile-open { display: flex; }
+      .topbar-nav .nav-item { text-align: left; padding: 12px 14px; font-size: 14px; border-radius: 8px; }
       .content { grid-template-columns: 1fr; padding: 16px; }
       .hero { flex-direction: column; gap: 16px; padding: 24px 16px; }
       .modulo-wrap { padding: 16px; }
@@ -242,6 +260,9 @@
       </div>
     </div>
     <nav class="topbar-nav" id="topbar-nav"></nav>
+    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Abrir menú">
+      <i class="ti ti-menu-2"></i>
+    </button>
     <div class="user-pill" onclick="toggleLogout()">
       <div class="user-avatar" id="user-avatar">?</div>
       <span class="user-name" id="user-name">Usuario</span>
@@ -747,6 +768,12 @@
     document.getElementById('logout-menu').classList.toggle('open');
   }
 
+  // Abre/cierra el menú desplegable en celular (el hamburger-btn
+  // solo es visible en pantallas chicas, vía CSS)
+  function toggleMobileNav() {
+    document.getElementById('topbar-nav').classList.toggle('mobile-open');
+  }
+
   // ============================================================
   // NAVEGACIÓN
   // ============================================================
@@ -755,6 +782,7 @@
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.getElementById('page-' + id).classList.add('active');
     if (btn) btn.classList.add('active');
+    document.getElementById('topbar-nav').classList.remove('mobile-open'); // cerrar menú móvil al elegir
     if (id === 'asistencia') {
       const curso = document.getElementById('sel-curso').value;
       if (curso) cargarAlumnos(curso);
