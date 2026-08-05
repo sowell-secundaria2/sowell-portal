@@ -1062,31 +1062,34 @@
     }
   }
 
-  function getMateriaDocente(curso) {
-    // Para docentes: extraer la materia que le corresponde a este curso específico
-    // del campo cursos: "Matemática:1A, Matemática:2B"
+  function getMateriasDocente(curso) {
+    // Para docentes: extraer TODAS las materias que le corresponden a este
+    // curso específico del campo cursos: "Matemática:1A, Física:1A, Matemática:2B"
+    // (antes solo devolvía la primera que encontraba, así que un docente con
+    // 2 materias en el mismo curso nunca podía ver la segunda)
     const u = usuarioActual;
     if (u.rol === 'director') return null; // director ve todas
     if (!u.cursos) return null;
     const entries = String(u.cursos).split(',');
+    const materias = [];
     for (const entry of entries) {
       const partes = entry.trim().split(':');
       if (partes.length === 2) {
         const materia = partes[0].trim();
         const cursoParte = normalizarCurso(partes[1].trim());
-        if (cursoParte === curso) return materia;
+        if (cursoParte === curso && !materias.includes(materia)) materias.push(materia);
       }
     }
-    return null; // si no tiene formato materia:curso, ve todas
+    return materias.length > 0 ? materias : null; // null si no tiene formato materia:curso -> ve todas
   }
 
   function onCursoCalifChange(curso) {
     const selMateria = document.getElementById('cal-sel-materia');
     selMateria.innerHTML = '';
     const todasMaterias = MATERIAS_POR_CURSO[curso] || [];
-    const materiaDocente = getMateriaDocente(curso);
+    const materiasDocente = getMateriasDocente(curso);
 
-    const materias = materiaDocente ? [materiaDocente] : todasMaterias;
+    const materias = materiasDocente || todasMaterias;
 
     if (materias.length === 0) {
       const opt = document.createElement('option');
