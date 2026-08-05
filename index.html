@@ -42,6 +42,8 @@
     .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.16); color: #fff; }
     .hamburger-btn { display: none; background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
     .hamburger-btn:hover { background: rgba(255,255,255,0.12); }
+    .btn-volver { display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 0.5px solid var(--border2); color: var(--text2); font-size: 12.5px; font-family: 'DM Sans', sans-serif; padding: 7px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 12px; transition: background 0.15s; }
+    .btn-volver:hover { background: var(--border); color: var(--text); }
     .user-pill { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.1); border-radius: 20px; padding: 4px 12px 4px 5px; cursor: pointer; position: relative; }
     .user-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 500; color: #fff; overflow: hidden; }
     .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -358,6 +360,7 @@
   <!-- ASISTENCIA -->
   <div id="page-asistencia" class="page">
     <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
       <div class="modulo-topbar">
         <div style="display:flex;align-items:center;gap:10px">
           <i class="ti ti-clipboard-check" style="color:#fff;font-size:20px"></i>
@@ -408,6 +411,7 @@
   <!-- CALIFICACIONES -->
   <div id="page-calificaciones" class="page">
     <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
       <div class="modulo-topbar">
         <div style="display:flex;align-items:center;gap:10px">
           <i class="ti ti-report-analytics" style="color:#fff;font-size:20px"></i>
@@ -451,6 +455,7 @@
   <!-- SANCIONES -->
   <div id="page-sanciones" class="page">
     <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
       <div class="modulo-topbar">
         <div style="display:flex;align-items:center;gap:10px">
           <i class="ti ti-alert-triangle" style="color:#fff;font-size:20px"></i>
@@ -530,6 +535,7 @@
   <!-- COMUNICADOS -->
   <div id="page-comunicados" class="page">
     <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
       <div class="modulo-topbar">
         <div style="display:flex;align-items:center;gap:10px">
           <i class="ti ti-speakerphone" style="color:#fff;font-size:20px"></i>
@@ -701,6 +707,10 @@
       '<button class="nav-item ' + (i===0?'active':'') + '" onclick="showPage(\'' + item.page + '\',this)">' + item.label + '</button>'
     ).join('');
 
+    // Arranca el historial del navegador en "inicio", así el botón
+    // atrás/adelante funciona bien desde el primer clic en un módulo.
+    history.replaceState({ page: 'inicio' }, '', '#inicio');
+
     // Cursos por usuario:
     // - director ve TODOS_LOS_CURSOS
     // - cualquier otro rol ve únicamente lo que vino en u.cursos
@@ -777,10 +787,23 @@
   // ============================================================
   // NAVEGACIÓN
   // ============================================================
-  function showPage(id, btn) {
+  // renderPage: solo actualiza lo que se ve en pantalla, sin tocar
+  // el historial del navegador (la usa showPage() para navegar hacia
+  // adelante, y el listener de popstate para cuando el usuario usa
+  // el botón atrás/adelante del navegador).
+  function renderPage(id, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    const pagina = document.getElementById('page-' + id);
+    if (!pagina) { id = 'inicio'; } // fallback por si el hash no es válido
     document.getElementById('page-' + id).classList.add('active');
+    if (!btn) {
+      // Buscar el botón del nav que corresponde a esta página (para marcarlo
+      // activo), por ejemplo cuando se llega acá desde el botón atrás/adelante
+      const items = NAV_POR_ROL[usuarioActual.rol] || NAV_POR_ROL.alumno;
+      const idx = items.findIndex(it => it.page === id);
+      if (idx !== -1) btn = document.querySelectorAll('.nav-item')[idx];
+    }
     if (btn) btn.classList.add('active');
     document.getElementById('topbar-nav').classList.remove('mobile-open'); // cerrar menú móvil al elegir
     if (id === 'asistencia') {
@@ -790,16 +813,38 @@
     if (id === 'sanciones') {
       cargarHistorialSanciones();
     }
+    return id;
   }
 
+  // showPage: la usan los clicks del nav y los accesos rápidos.
+  // Además de mostrar la página, registra el cambio en el historial
+  // del navegador -> así el botón atrás funciona de forma nativa,
+  // sin recargar la página ni pedir loguearse de nuevo.
+  function showPage(id, btn) {
+    const idFinal = renderPage(id, btn);
+    if (!history.state || history.state.page !== idFinal) {
+      history.pushState({ page: idFinal }, '', '#' + idFinal);
+    }
+  }
+
+  // Cuando el usuario usa el botón atrás/adelante del navegador,
+  // solo actualizamos la vista (no volvemos a empujar historial,
+  // para no romper la pila de atrás/adelante).
+  window.addEventListener('popstate', function(e) {
+    if (!usuarioActual) return; // todavía no logueado, no hay nada que navegar
+    const id = (e.state && e.state.page) || 'inicio';
+    renderPage(id);
+  });
+
   // Navega a una página buscando su botón correspondiente en el nav
-  // del rol actual (usado por los accesos rápidos de Inicio).
+  // del rol actual (usado por los accesos rápidos de Inicio y el
+  // botón "Volver a Inicio" de cada módulo).
   function irAPagina(pageId) {
     const items = NAV_POR_ROL[usuarioActual.rol] || NAV_POR_ROL.alumno;
     const idx = items.findIndex(it => it.page === pageId);
-    if (idx === -1) { mostrarToast('No tenés acceso a esta sección', 'error'); return; }
+    if (idx === -1 && pageId !== 'inicio') { mostrarToast('No tenés acceso a esta sección', 'error'); return; }
     const btns = document.querySelectorAll('.nav-item');
-    showPage(pageId, btns[idx]);
+    showPage(pageId, idx !== -1 ? btns[idx] : null);
   }
 
   // ============================================================
