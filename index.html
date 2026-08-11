@@ -532,6 +532,42 @@
     </div>
   </div>
 
+  <!-- MIS CALIFICACIONES (solo lectura, para familias) -->
+  <div id="page-mis-calificaciones" class="page">
+    <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
+      <div class="modulo-topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <i class="ti ti-report" style="color:#fff;font-size:20px"></i>
+          <div><div class="modulo-title">Calificaciones</div><div class="modulo-sub" id="mc-sub">Sowell · Secundaria</div></div>
+        </div>
+        <div class="user-pill" style="cursor:default">
+          <div class="user-avatar" id="mc-avatar">?</div>
+          <span class="user-name" id="mc-nombre">Cargando...</span>
+        </div>
+      </div>
+      <div id="mc-contenido"><div class="cargando">Cargando calificaciones...</div></div>
+    </div>
+  </div>
+
+  <!-- MIS SANCIONES (solo lectura, para familias) -->
+  <div id="page-mis-sanciones" class="page">
+    <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
+      <div class="modulo-topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <i class="ti ti-alert-triangle" style="color:#fff;font-size:20px"></i>
+          <div><div class="modulo-title">Sanciones</div><div class="modulo-sub" id="ms-sub">Sowell · Secundaria</div></div>
+        </div>
+        <div class="user-pill" style="cursor:default">
+          <div class="user-avatar" id="ms-avatar">?</div>
+          <span class="user-name" id="ms-nombre">Cargando...</span>
+        </div>
+      </div>
+      <div class="com-historial" id="ms-historial"><div class="cargando">Cargando sanciones...</div></div>
+    </div>
+  </div>
+
   <!-- COMUNICADOS -->
   <div id="page-comunicados" class="page">
     <div class="modulo-wrap">
@@ -616,7 +652,7 @@
     director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Comunicados',page:'comunicados'}],
     preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Comunicados',page:'comunicados'}],
     docente:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'calificaciones'},{label:'Comunicados',page:'comunicados'}],
-    familia:   [{label:'Inicio',page:'inicio'}],
+    familia:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'mis-calificaciones'},{label:'Sanciones',page:'mis-sanciones'}],
     alumno:    [{label:'Inicio',page:'inicio'}],
   };
 
@@ -763,6 +799,14 @@
     document.getElementById('sanc-sub').textContent = 'Sowell · ' + u.rol.charAt(0).toUpperCase() + u.rol.slice(1);
     inicializarSanciones();
 
+    // Inicializar "Mis calificaciones" / "Mis sanciones" (rol familia)
+    document.getElementById('mc-avatar').textContent = iniciales;
+    document.getElementById('mc-nombre').textContent = u.nombre + ' ' + u.apellido;
+    document.getElementById('mc-sub').textContent = 'Sowell · Familia';
+    document.getElementById('ms-avatar').textContent = iniciales;
+    document.getElementById('ms-nombre').textContent = u.nombre + ' ' + u.apellido;
+    document.getElementById('ms-sub').textContent = 'Sowell · Familia';
+
     inicializarFecha();
     inicializarCalendario();
   }
@@ -812,6 +856,12 @@
     }
     if (id === 'sanciones') {
       cargarHistorialSanciones();
+    }
+    if (id === 'mis-calificaciones') {
+      cargarMisCalificaciones();
+    }
+    if (id === 'mis-sanciones') {
+      cargarMisSanciones();
     }
     return id;
   }
@@ -1742,6 +1792,77 @@
         }).join('');
     } catch(err) {
       cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar historial</div>';
+    }
+  }
+
+  // ============================================================
+  // MIS CALIFICACIONES / MIS SANCIONES (rol familia, solo lectura)
+  // ============================================================
+  async function cargarMisCalificaciones() {
+    const cont = document.getElementById('mc-contenido');
+    const idAlumno = usuarioActual && usuarioActual.id_alumno;
+    if (!idAlumno) {
+      cont.innerHTML = '<div class="cargando">Todavía no vinculamos tu cuenta a los datos de tu hijo/a. Contactate con secretaría para que lo resuelvan.</div>';
+      return;
+    }
+    cont.innerHTML = '<div class="cargando">Cargando calificaciones...</div>';
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getCalificacionesPorAlumno', id_alumno: idAlumno }) });
+      const data = await res.json();
+      if (!data.ok || !data.datos || data.datos.length === 0) {
+        cont.innerHTML = '<div class="cargando">Todavía no hay calificaciones cargadas</div>';
+        return;
+      }
+      // Agrupar por materia
+      const porMateria = {};
+      data.datos.forEach(c => {
+        if (!porMateria[c.materia]) porMateria[c.materia] = [];
+        porMateria[c.materia].push(c);
+      });
+      cont.innerHTML = Object.keys(porMateria).sort().map(materia => {
+        const filas = porMateria[materia];
+        return '<div class="com-item">' +
+          '<div class="com-item-header"><span class="com-item-titulo">' + materia + '</span>' +
+          '<span class="com-item-meta">' + (filas[0].docente || '') + '</span></div>' +
+          filas.map(f =>
+            '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:0.5px solid var(--border);font-size:13px">' +
+              '<span style="color:var(--text2)">' + f.instancia + '</span>' +
+              '<span style="font-weight:600">' + f.nota + '</span>' +
+            '</div>'
+          ).join('') +
+        '</div>';
+      }).join('');
+    } catch(err) {
+      cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar calificaciones</div>';
+    }
+  }
+
+  async function cargarMisSanciones() {
+    const cont = document.getElementById('ms-historial');
+    const idAlumno = usuarioActual && usuarioActual.id_alumno;
+    if (!idAlumno) {
+      cont.innerHTML = '<div class="cargando">Todavía no vinculamos tu cuenta a los datos de tu hijo/a. Contactate con secretaría para que lo resuelvan.</div>';
+      return;
+    }
+    cont.innerHTML = '<div class="cargando">Cargando sanciones...</div>';
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getSancionesPorAlumno', id_alumno: idAlumno }) });
+      const data = await res.json();
+      if (!data.ok || !data.datos || data.datos.length === 0) {
+        cont.innerHTML = '<div class="cargando">No hay sanciones registradas</div>';
+        return;
+      }
+      cont.innerHTML = data.datos.map(s =>
+        '<div class="com-item">' +
+          '<div class="com-item-header">' +
+            '<span class="com-badge ' + claseSancion(s.tipo) + '">' + (s.tipo || '—') + '</span>' +
+            '<span class="com-item-meta">' + (s.fecha || '') + '</span>' +
+          '</div>' +
+          '<div class="com-item-cuerpo">' + (s.motivo || '') + '</div>' +
+        '</div>'
+      ).join('');
+    } catch(err) {
+      cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar sanciones</div>';
     }
   }
 </script>
