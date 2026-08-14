@@ -146,6 +146,12 @@
     .calif-tabla td:first-child { text-align: left; font-weight: 500; font-size: 13px; white-space: nowrap; }
     .calif-tabla tr:last-child td { border-bottom: none; }
     .calif-tabla tr:hover td { background: var(--navy-light); }
+    .seg-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 8px; white-space: nowrap; }
+    .seg-aprobada { background: var(--green-light); color: #14532d; }
+    .seg-pendiente { background: var(--red-light); color: #501313; }
+    .seg-curso { background: var(--amber-light); color: var(--amber-dark); }
+    .seg-sindatos { background: var(--surface2); color: var(--text3); }
+    .seg-tipo-r { font-size: 9px; color: var(--red); font-weight: 700; margin-left: 3px; }
     .nota-input { width: 54px; border: 0.5px solid var(--border); border-radius: 6px; padding: 5px 4px; font-size: 13px; font-family: 'DM Sans', sans-serif; text-align: center; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.12s; }
     .nota-input:focus { border-color: var(--navy-mid); }
     .nota-input:disabled { background: var(--surface2); color: var(--text3); cursor: not-allowed; }
@@ -568,6 +574,39 @@
     </div>
   </div>
 
+  <!-- SEGUIMIENTO DE TRAYECTORIAS (director/preceptor) -->
+  <div id="page-seguimiento" class="page">
+    <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
+      <div class="modulo-topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <i class="ti ti-chart-line" style="color:#fff;font-size:20px"></i>
+          <div><div class="modulo-title">Seguimiento de trayectorias</div><div class="modulo-sub" id="seg-sub">Sowell · Secundaria</div></div>
+        </div>
+        <div class="user-pill" style="cursor:default">
+          <div class="user-avatar" id="seg-avatar">?</div>
+          <span class="user-name" id="seg-nombre">Cargando...</span>
+        </div>
+      </div>
+
+      <div class="calif-controls">
+        <select id="seg-sel-curso" onchange="cargarSeguimiento()">
+          <option value="">Seleccioná un curso</option>
+        </select>
+      </div>
+
+      <div class="calif-legend" style="margin-bottom:14px">
+        <span class="seg-badge seg-aprobada">Aprobada</span>
+        <span class="seg-badge seg-curso">En curso</span>
+        <span class="seg-badge seg-pendiente">Pendiente de intensif.</span>
+        <span class="seg-badge seg-sindatos">Sin datos</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:6px"><span class="seg-tipo-r">R</span> = recursando</span>
+      </div>
+
+      <div id="seg-contenido"><div class="cargando">Seleccioná un curso para ver el seguimiento</div></div>
+    </div>
+  </div>
+
   <!-- COMUNICADOS -->
   <div id="page-comunicados" class="page">
     <div class="modulo-wrap">
@@ -649,8 +688,8 @@
   const TODOS_LOS_CURSOS = ['1° A','1° B','1° C','2° A','2° B','2° C','3° A','3° B','3° C','4° A','4° B','4° C','5° A','5° B','5° C','6° A','6° B','6° C'];
 
   const NAV_POR_ROL = {
-    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Comunicados',page:'comunicados'}],
-    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Comunicados',page:'comunicados'}],
+    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Comunicados',page:'comunicados'}],
+    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Comunicados',page:'comunicados'}],
     docente:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'calificaciones'},{label:'Comunicados',page:'comunicados'}],
     familia:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'mis-calificaciones'},{label:'Sanciones',page:'mis-sanciones'}],
     alumno:    [{label:'Inicio',page:'inicio'}],
@@ -807,6 +846,22 @@
     document.getElementById('ms-avatar').textContent = iniciales;
     document.getElementById('ms-nombre').textContent = u.nombre + ' ' + u.apellido;
     document.getElementById('ms-sub').textContent = 'Sowell · Familia';
+
+    // Inicializar Seguimiento de trayectorias (director/preceptor)
+    if (u.rol === 'director' || u.rol === 'preceptor') {
+      document.getElementById('seg-avatar').textContent = iniciales;
+      document.getElementById('seg-nombre').textContent = u.nombre + ' ' + u.apellido;
+      document.getElementById('seg-sub').textContent = 'Sowell · ' + u.rol.charAt(0).toUpperCase() + u.rol.slice(1);
+      const selSeg = document.getElementById('seg-sel-curso');
+      selSeg.innerHTML = '<option value="">Seleccioná un curso</option>';
+      const cursosSeg = u.rol === 'director' ? TODOS_LOS_CURSOS :
+        (u.cursos ? String(u.cursos).split(',').map(c => normalizarCurso(c.trim())) : []);
+      cursosSeg.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        selSeg.appendChild(opt);
+      });
+    }
 
     inicializarFecha();
     inicializarCalendario();
@@ -1864,6 +1919,50 @@
       ).join('');
     } catch(err) {
       cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar sanciones</div>';
+    }
+  }
+
+  // ============================================================
+  // SEGUIMIENTO DE TRAYECTORIAS (director/preceptor)
+  // ============================================================
+  function claseSeguimiento(estado) {
+    if (estado === 'Aprobada') return 'seg-aprobada';
+    if (estado === 'En curso') return 'seg-curso';
+    if (estado === 'Pendiente de intensificación') return 'seg-pendiente';
+    return 'seg-sindatos';
+  }
+
+  async function cargarSeguimiento() {
+    const cont = document.getElementById('seg-contenido');
+    const curso = document.getElementById('seg-sel-curso').value;
+    if (!curso) { cont.innerHTML = '<div class="cargando">Seleccioná un curso para ver el seguimiento</div>'; return; }
+    cont.innerHTML = '<div class="cargando">Cargando seguimiento...</div>';
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getSeguimientoPorCurso', curso }) });
+      const data = await res.json();
+      if (!data.ok || !data.datos || !data.datos.alumnos || data.datos.alumnos.length === 0) {
+        cont.innerHTML = '<div class="cargando">No hay alumnos activos en ese curso</div>';
+        return;
+      }
+      const materias = data.datos.materias;
+      const alumnos = data.datos.alumnos;
+
+      let html = '<div class="calif-tabla-wrap"><table class="calif-tabla"><thead><tr><th>Alumno</th>';
+      materias.forEach(m => { html += '<th>' + m + '</th>'; });
+      html += '</tr></thead><tbody>';
+
+      alumnos.forEach(al => {
+        html += '<tr><td>' + al.apellido + ', ' + al.nombre + '</td>';
+        al.materias.forEach(m => {
+          html += '<td><span class="seg-badge ' + claseSeguimiento(m.estado) + '">' + m.estado + '</span>' +
+                  (m.tipo === 'R' ? '<span class="seg-tipo-r">R</span>' : '') + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      cont.innerHTML = html;
+    } catch(err) {
+      cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar el seguimiento</div>';
     }
   }
 </script>
