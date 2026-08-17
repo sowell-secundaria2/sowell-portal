@@ -152,6 +152,7 @@
     .seg-curso { background: var(--amber-light); color: var(--amber-dark); }
     .seg-sindatos { background: var(--surface2); color: var(--text3); }
     .seg-tipo-r { font-size: 9px; color: var(--red); font-weight: 700; margin-left: 3px; }
+    .seg-nota { display: block; font-size: 10px; color: var(--text3); margin-top: 3px; }
     .nota-input { width: 54px; border: 0.5px solid var(--border); border-radius: 6px; padding: 5px 4px; font-size: 13px; font-family: 'DM Sans', sans-serif; text-align: center; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.12s; }
     .nota-input:focus { border-color: var(--navy-mid); }
     .nota-input:disabled { background: var(--surface2); color: var(--text3); cursor: not-allowed; }
@@ -1168,6 +1169,7 @@
   const INSTANCIAS = [
     { id: 'inf1',    label: '1er Inf. Medio',    tipo: 'informe' },
     { id: 'cuat1',   label: '1er Cuatrimestre',  tipo: 'entero'  },
+    { id: 'intjul',  label: 'Intensif. Julio',   tipo: 'entero'  },
     { id: 'inf2',    label: '2do Inf. Medio',    tipo: 'informe' },
     { id: 'cuat2',   label: '2do Cuatrimestre',  tipo: 'entero'  },
     { id: 'anual',   label: 'Calif. Anual',      tipo: 'calc'    },
@@ -1283,8 +1285,8 @@
       // Construir registro inicial desde las calificaciones existentes
       const califExistentes = resCalif.ok ? (resCalif.datos || []) : [];
       califActuales.forEach(al => {
-        califRegistro[al.id] = { inf1: '', cuat1: '', inf2: '', cuat2: '', intdic: '', intfeb: '' };
-        const instanciaMap = { '1er Informe Medio': 'inf1', '1er Cuatrimestre': 'cuat1', '2do Informe Medio': 'inf2', '2do Cuatrimestre': 'cuat2', 'Intensificación Diciembre': 'intdic', 'Intensificación Feb/Mar': 'intfeb' };
+        califRegistro[al.id] = { inf1: '', cuat1: '', intjul: '', inf2: '', cuat2: '', intdic: '', intfeb: '' };
+        const instanciaMap = { '1er Informe Medio': 'inf1', '1er Cuatrimestre': 'cuat1', 'Intensificación Julio': 'intjul', '2do Informe Medio': 'inf2', '2do Cuatrimestre': 'cuat2', 'Intensificación Diciembre': 'intdic', 'Intensificación Feb/Mar': 'intfeb' };
         califExistentes.filter(c => String(c.id_alumno) === String(al.id)).forEach(c => {
           const key = instanciaMap[c.instancia];
           if (key) califRegistro[al.id][key] = String(c.nota);
@@ -1301,6 +1303,9 @@
     }
   }
 
+  // El Anual solo depende de los cuatrimestres directos (inciso 8a). Si
+  // hizo falta intensificar en Julio, el Anual queda en TEP igual —
+  // Julio no lo modifica (así lo confirmó el usuario).
   function calcularAnual(cuat1, cuat2) {
     const c1 = parseFloat(cuat1);
     const c2 = parseFloat(cuat2);
@@ -1311,16 +1316,25 @@
     return 'TEP';
   }
 
-  function calcularDefinitiva(cuat1, cuat2, intdic, intfeb) {
+  // Nota final (Definitiva): si el Anual ya es un promedio válido (ambos
+  // cuatrimestres aprobados directo, sin intensificar) esa es la nota
+  // final (8a). Si hizo falta intensificar -- en Julio, Diciembre y/o
+  // Feb/Mar -- la definitiva NUNCA se promedia: es la nota del ÚLTIMO
+  // período de intensificación que aprobó (mínimo 4), sea cual sea
+  // (8b/8c). El docente puede saltear Julio y cargar la recuperación
+  // directo en Diciembre -- funciona igual, simplemente Julio queda
+  // vacío y no se usa. Si todavía no aprobó ninguno, "Pendiente"
+  // ("Continúa Intensificando", 8d).
+  function calcularDefinitiva(cuat1, intjul, cuat2, intdic, intfeb) {
     const anual = calcularAnual(cuat1, cuat2);
     if (!anual) return '';
-    // Aprobó directo
     if (anual !== 'TEP') return anual;
-    // Fue a intensificación
-    const dic = parseFloat(intdic);
-    if (!isNaN(dic) && intdic !== '') return String(dic);
     const feb = parseFloat(intfeb);
-    if (!isNaN(feb) && intfeb !== '') return String(feb);
+    if (!isNaN(feb) && feb >= 4) return String(feb);
+    const dic = parseFloat(intdic);
+    if (!isNaN(dic) && dic >= 4) return String(dic);
+    const jul = parseFloat(intjul);
+    if (!isNaN(jul) && jul >= 4) return String(jul);
     return 'Pendiente';
   }
 
@@ -1331,23 +1345,26 @@
     return '';
   }
 
-  function estadoAlumno(cuat1, cuat2, intdic, intfeb) {
+  function estadoAlumno(cuat1, intjul, cuat2, intdic, intfeb) {
     const anual = calcularAnual(cuat1, cuat2);
     if (!anual) return { label: 'Sin notas', clase: 'estado-pendiente' };
     if (anual !== 'TEP') return { label: 'Aprobado', clase: 'estado-aprobado' };
-    const dic = parseFloat(intdic);
-    if (!isNaN(dic) && intdic !== '') return dic >= 4 ? { label: 'Aprobado (Dic.)', clase: 'estado-aprobado' } : { label: 'A Feb/Mar', clase: 'estado-intensif' };
     const feb = parseFloat(intfeb);
-    if (!isNaN(feb) && intfeb !== '') return feb >= 4 ? { label: 'Aprobado (Feb)', clase: 'estado-aprobado' } : { label: 'Desaprobado', clase: 'estado-ted' };
+    if (!isNaN(feb) && intfeb !== '') return feb >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'Desaprobado', clase: 'estado-ted' };
+    const dic = parseFloat(intdic);
+    if (!isNaN(dic) && intdic !== '') return dic >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'A Feb/Mar', clase: 'estado-intensif' };
+    const jul = parseFloat(intjul);
+    if (!isNaN(jul) && intjul !== '') return jul >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'A Dic./Feb.', clase: 'estado-intensif' };
     return { label: 'A intensif.', clase: 'estado-intensif' };
   }
 
   function onNotaChange(idAlumno, campo, val) {
     califRegistro[idAlumno][campo] = val.trim().toUpperCase();
     // Re-renderizar solo las celdas calculadas de esa fila
-    const anual = calcularAnual(califRegistro[idAlumno].cuat1, califRegistro[idAlumno].cuat2);
-    const defin = calcularDefinitiva(califRegistro[idAlumno].cuat1, califRegistro[idAlumno].cuat2, califRegistro[idAlumno].intdic, califRegistro[idAlumno].intfeb);
-    const est = estadoAlumno(califRegistro[idAlumno].cuat1, califRegistro[idAlumno].cuat2, califRegistro[idAlumno].intdic, califRegistro[idAlumno].intfeb);
+    const r = califRegistro[idAlumno];
+    const anual = calcularAnual(r.cuat1, r.cuat2);
+    const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
+    const est = estadoAlumno(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
 
     const anualEl = document.getElementById('anual-' + idAlumno);
     const definEl = document.getElementById('defin-' + idAlumno);
@@ -1368,8 +1385,8 @@
     califActuales.forEach(al => {
       const r = califRegistro[al.id];
       const anual = calcularAnual(r.cuat1, r.cuat2);
-      const defin = calcularDefinitiva(r.cuat1, r.cuat2, r.intdic, r.intfeb);
-      const est = estadoAlumno(r.cuat1, r.cuat2, r.intdic, r.intfeb);
+      const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
+      const est = estadoAlumno(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
       const necesitaIntensif = anual === 'TEP';
 
       html += '<tr>';
@@ -1387,11 +1404,15 @@
           const val = inst.id === 'anual' ? anual : defin;
           html += '<td><input id="' + inst.id + '-' + al.id + '" class="nota-input calculada ' + claseNota(val) + '" value="' + val + '" disabled></td>';
         } else {
-          // entero — intdic e intfeb solo se habilitan si necesita intensificación
-          const esIntensif = inst.id === 'intdic' || inst.id === 'intfeb';
-          const deshabilitado = esIntensif && !necesitaIntensif;
+          // entero. intdic e intfeb solo se habilitan si necesita intensificación
+          // de fin de año; intjul (recupero de julio del 1er cuatrimestre) va
+          // siempre habilitada. Las tres son instancias de intensificación ->
+          // piden nota mínima 4 para considerarse aprobadas.
+          const esGating = inst.id === 'intdic' || inst.id === 'intfeb';
+          const esNotaIntensif = esGating || inst.id === 'intjul';
+          const deshabilitado = esGating && !necesitaIntensif;
           const val = deshabilitado ? '' : (r[inst.id] || '');
-          html += '<td><input class="nota-input" type="number" min="1" max="10" step="1" value="' + val + '" ' + (deshabilitado ? 'disabled placeholder="—"' : 'placeholder="—"') + ' oninput="validarEntero(this,' + (esIntensif ? '4' : '1') + ',10)" onchange="onNotaChange(\'' + al.id + '\',\'' + inst.id + '\',this.value)"></td>';
+          html += '<td><input class="nota-input" type="number" min="1" max="10" step="1" value="' + val + '" ' + (deshabilitado ? 'disabled placeholder="—"' : 'placeholder="—"') + ' oninput="validarEntero(this,' + (esNotaIntensif ? '4' : '1') + ',10)" onchange="onNotaChange(\'' + al.id + '\',\'' + inst.id + '\',this.value)"></td>';
         }
       });
 
@@ -1426,27 +1447,31 @@
     btn.innerHTML = '<i class="ti ti-loader"></i> Guardando...';
 
     const registros = [];
-    const instanciaLabel = { inf1: '1er Informe Medio', cuat1: '1er Cuatrimestre', inf2: '2do Informe Medio', cuat2: '2do Cuatrimestre', intdic: 'Intensificación Diciembre', intfeb: 'Intensificación Feb/Mar' };
+    const instanciaLabel = { inf1: '1er Informe Medio', cuat1: '1er Cuatrimestre', intjul: 'Intensificación Julio', inf2: '2do Informe Medio', cuat2: '2do Cuatrimestre', intdic: 'Intensificación Diciembre', intfeb: 'Intensificación Feb/Mar' };
 
     califActuales.forEach(al => {
       const r = califRegistro[al.id];
+      // Se manda SIEMPRE cada instancia, incluso vacía: si un campo se
+      // borró para corregir/deshacer una nota ya guardada, el backend
+      // necesita saber que ese valor está vacío para borrar la fila
+      // correspondiente (antes esto se filtraba acá y la nota vieja
+      // quedaba pegada para siempre en el Sheet).
       Object.entries(instanciaLabel).forEach(([key, label]) => {
-        if (r[key] !== '' && r[key] !== null && r[key] !== undefined) {
-          registros.push({
-            id_alumno: al.id,
-            materia,
-            curso,
-            docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema',
-            instancia: label,
-            nota: r[key]
-          });
-        }
+        registros.push({
+          id_alumno: al.id,
+          materia,
+          curso,
+          docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema',
+          instancia: label,
+          nota: r[key]
+        });
       });
-      // Guardar también calculadas
+      // Guardar también calculadas (mismo criterio: se manda vacío/'Pendiente'
+      // como nota vacía para que se borre si ya no corresponde)
       const anual = calcularAnual(r.cuat1, r.cuat2);
-      const defin = calcularDefinitiva(r.cuat1, r.cuat2, r.intdic, r.intfeb);
-      if (anual) registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Anual', nota: anual });
-      if (defin && defin !== 'Pendiente') registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Definitiva', nota: defin });
+      const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
+      registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Anual', nota: anual });
+      registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Definitiva', nota: (defin === 'Pendiente' ? '' : defin) });
     });
 
     try {
@@ -1954,8 +1979,12 @@
       alumnos.forEach(al => {
         html += '<tr><td>' + al.apellido + ', ' + al.nombre + '</td>';
         al.materias.forEach(m => {
+          // Nota a mostrar: la definitiva si ya está, si no la anual, si no
+          // el promedio de cuatrimestres cargados hasta el momento.
+          const nota = m.definitiva || m.anual || m.cuat2 || m.cuat1 || '';
           html += '<td><span class="seg-badge ' + claseSeguimiento(m.estado) + '">' + m.estado + '</span>' +
-                  (m.tipo === 'R' ? '<span class="seg-tipo-r">R</span>' : '') + '</td>';
+                  (m.tipo === 'R' ? '<span class="seg-tipo-r">R</span>' : '') +
+                  (nota ? '<span class="seg-nota">' + nota + '</span>' : '') + '</td>';
         });
         html += '</tr>';
       });
