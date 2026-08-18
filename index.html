@@ -1316,26 +1316,53 @@
     return 'TEP';
   }
 
-  // Nota final (Definitiva): si el Anual ya es un promedio válido (ambos
-  // cuatrimestres aprobados directo, sin intensificar) esa es la nota
-  // final (8a). Si hizo falta intensificar -- en Julio, Diciembre y/o
-  // Feb/Mar -- la definitiva NUNCA se promedia: es la nota del ÚLTIMO
-  // período de intensificación que aprobó (mínimo 4), sea cual sea
-  // (8b/8c). El docente puede saltear Julio y cargar la recuperación
-  // directo en Diciembre -- funciona igual, simplemente Julio queda
-  // vacío y no se usa. Si todavía no aprobó ninguno, "Pendiente"
-  // ("Continúa Intensificando", 8d).
+  // Nota final (Definitiva): NO alcanza con que exista alguna nota de
+  // intensificación aprobada -- hay que resolver cada cuatrimestre por
+  // separado antes de dar una nota numérica final:
+  //  - Si ambos cuatrimestres se aprueban directo (>=7) -> promedio (8a).
+  //  - Si el 1° se recupera (Julio, o directo en Dic/Feb si se saltea
+  //    Julio) y el 2° se aprueba directo -> definitiva = la nota de esa
+  //    recuperación (8b). Julio NO cuenta para el 2°.
+  //  - Si el 1° se aprueba directo y el 2° necesita Dic/Feb -> definitiva
+  //    = la nota de esa recuperación de fin de año.
+  //  - Si ninguno se aprueba directo -> ambos se intensifican juntos en
+  //    Dic/Feb (5.1); definitiva = esa nota una vez aprobada.
+  // Mientras el/los cuatrimestre(s) pendientes no se resuelvan del todo,
+  // la definitiva se muestra como "TEP" (no se adelanta una nota parcial).
   function calcularDefinitiva(cuat1, intjul, cuat2, intdic, intfeb) {
-    const anual = calcularAnual(cuat1, cuat2);
-    if (!anual) return '';
-    if (anual !== 'TEP') return anual;
-    const feb = parseFloat(intfeb);
-    if (!isNaN(feb) && feb >= 4) return String(feb);
-    const dic = parseFloat(intdic);
-    if (!isNaN(dic) && dic >= 4) return String(dic);
+    const c1 = parseFloat(cuat1);
+    const c2 = parseFloat(cuat2);
+    if (isNaN(c1) || isNaN(c2)) return ''; // todavía no hay datos de los dos cuatrimestres
+
+    const c1Ok = c1 >= 7;
+    const c2Ok = c2 >= 7;
     const jul = parseFloat(intjul);
-    if (!isNaN(jul) && jul >= 4) return String(jul);
-    return 'Pendiente';
+    const dic = parseFloat(intdic);
+    const feb = parseFloat(intfeb);
+    const julOk = !isNaN(jul) && jul >= 4;
+    const dicOk = !isNaN(dic) && dic >= 4;
+    const febOk = !isNaN(feb) && feb >= 4;
+
+    if (c1Ok && c2Ok) {
+      return (Math.round((c1 + c2) / 2 * 10) / 10).toString();
+    }
+    if (!c1Ok && c2Ok) {
+      // Falta recuperar el 1° -- Julio primero, si no directo a Dic/Feb
+      if (julOk) return String(jul);
+      if (dicOk) return String(dic);
+      if (febOk) return String(feb);
+      return 'TEP';
+    }
+    if (c1Ok && !c2Ok) {
+      // Falta recuperar el 2° -- Julio no aplica acá
+      if (dicOk) return String(dic);
+      if (febOk) return String(feb);
+      return 'TEP';
+    }
+    // Ninguno aprobado directo -> se intensifican juntos en Dic y/o Feb
+    if (dicOk) return String(dic);
+    if (febOk) return String(feb);
+    return 'TEP';
   }
 
   function claseNota(val) {
@@ -1346,15 +1373,15 @@
   }
 
   function estadoAlumno(cuat1, intjul, cuat2, intdic, intfeb) {
-    const anual = calcularAnual(cuat1, cuat2);
-    if (!anual) return { label: 'Sin notas', clase: 'estado-pendiente' };
-    if (anual !== 'TEP') return { label: 'Aprobado', clase: 'estado-aprobado' };
+    const c1 = parseFloat(cuat1);
+    const c2 = parseFloat(cuat2);
+    if (isNaN(c1) || isNaN(c2)) return { label: 'Sin notas', clase: 'estado-pendiente' };
+    const defin = calcularDefinitiva(cuat1, intjul, cuat2, intdic, intfeb);
+    if (defin !== 'TEP') return { label: 'Aprobado', clase: 'estado-aprobado' };
     const feb = parseFloat(intfeb);
-    if (!isNaN(feb) && intfeb !== '') return feb >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'Desaprobado', clase: 'estado-ted' };
+    if (!isNaN(feb) && intfeb !== '' && feb < 4) return { label: 'Desaprobado', clase: 'estado-ted' };
     const dic = parseFloat(intdic);
-    if (!isNaN(dic) && intdic !== '') return dic >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'A Feb/Mar', clase: 'estado-intensif' };
-    const jul = parseFloat(intjul);
-    if (!isNaN(jul) && intjul !== '') return jul >= 4 ? { label: 'Aprobado', clase: 'estado-aprobado' } : { label: 'A Dic./Feb.', clase: 'estado-intensif' };
+    if (!isNaN(dic) && intdic !== '' && dic < 4) return { label: 'A Feb/Mar', clase: 'estado-intensif' };
     return { label: 'A intensif.', clase: 'estado-intensif' };
   }
 
@@ -1482,12 +1509,12 @@
           nota: r[key]
         });
       });
-      // Guardar también calculadas (mismo criterio: se manda vacío/'Pendiente'
+      // Guardar también calculadas (mismo criterio: se manda vacío/'TEP'
       // como nota vacía para que se borre si ya no corresponde)
       const anual = calcularAnual(r.cuat1, r.cuat2);
       const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
       registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Anual', nota: anual });
-      registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Definitiva', nota: (defin === 'Pendiente' ? '' : defin) });
+      registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Definitiva', nota: (defin === 'TEP' ? '' : defin) });
     });
 
     try {
