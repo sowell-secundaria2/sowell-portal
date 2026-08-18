@@ -1372,6 +1372,22 @@
     if (anualEl) { anualEl.value = anual; anualEl.className = 'nota-input calculada ' + claseNota(anual); }
     if (definEl) { definEl.value = defin; definEl.className = 'nota-input calculada ' + claseNota(defin); }
     if (estEl) { estEl.textContent = est.label; estEl.className = 'estado-calif ' + est.clase; }
+
+    // Habilitar/deshabilitar Intensif. Dic. y Feb/Mar en el momento según
+    // si el Anual recién calculado quedó en TEP. Antes esto solo se
+    // definía en el render inicial de la tabla, así que si el Anual pasaba
+    // a TEP recién al cargar Julio (o cualquier nota), esos campos
+    // quedaban visualmente bloqueados hasta cambiar de materia y volver.
+    const necesitaIntensif = anual === 'TEP';
+    ['intdic', 'intfeb'].forEach(campoIntensif => {
+      const el = document.getElementById(campoIntensif + '-' + idAlumno);
+      if (!el) return;
+      el.disabled = !necesitaIntensif;
+      if (!necesitaIntensif && el.value !== '') {
+        el.value = '';
+        califRegistro[idAlumno][campoIntensif] = '';
+      }
+    });
   }
 
   function renderCalificaciones(curso, materia) {
@@ -1412,7 +1428,7 @@
           const esNotaIntensif = esGating || inst.id === 'intjul';
           const deshabilitado = esGating && !necesitaIntensif;
           const val = deshabilitado ? '' : (r[inst.id] || '');
-          html += '<td><input class="nota-input" type="number" min="1" max="10" step="1" value="' + val + '" ' + (deshabilitado ? 'disabled placeholder="—"' : 'placeholder="—"') + ' oninput="validarEntero(this,' + (esNotaIntensif ? '4' : '1') + ',10)" onchange="onNotaChange(\'' + al.id + '\',\'' + inst.id + '\',this.value)"></td>';
+          html += '<td><input id="' + inst.id + '-' + al.id + '" class="nota-input" type="number" min="1" max="10" step="1" value="' + val + '" ' + (deshabilitado ? 'disabled placeholder="—"' : 'placeholder="—"') + ' oninput="validarEntero(this,' + (esNotaIntensif ? '4' : '1') + ',10)" onchange="onNotaChange(\'' + al.id + '\',\'' + inst.id + '\',this.value)"></td>';
         }
       });
 
