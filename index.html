@@ -1269,10 +1269,12 @@
     califRegistro = {};
 
     try {
-      // Cargar alumnos del curso y calificaciones existentes en paralelo
-      const [resAlumnos, resCalif] = await Promise.all([
+      // Cargar alumnos del curso, calificaciones existentes y recursantes de esa
+      // materia (Caso A: alumnos de otro curso que recursan esta materia acá)
+      const [resAlumnos, resCalif, resRecursantes] = await Promise.all([
         fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getAlumnosPorCurso', curso }) }).then(r => r.json()),
-        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getCalificacionesPorCursoMateria', curso, materia }) }).then(r => r.json())
+        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getCalificacionesPorCursoMateria', curso, materia }) }).then(r => r.json()),
+        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getRecursantesPorCursoMateria', curso, materia }) }).then(r => r.json())
       ]);
 
       if (!resAlumnos.ok || !resAlumnos.datos || resAlumnos.datos.length === 0) {
@@ -1280,7 +1282,11 @@
         return;
       }
 
-      califActuales = resAlumnos.datos;
+      const recursantes = (resRecursantes && resRecursantes.ok) ? (resRecursantes.datos || []) : [];
+      const idsBase = new Set(resAlumnos.datos.map(a => String(a.id)));
+      const recursantesNuevos = recursantes.filter(a => !idsBase.has(String(a.id)));
+      califActuales = resAlumnos.datos.concat(recursantesNuevos);
+      califActuales.sort((a, b) => a.apellido.localeCompare(b.apellido));
 
       // Construir registro inicial desde las calificaciones existentes
       const califExistentes = resCalif.ok ? (resCalif.datos || []) : [];
@@ -1433,7 +1439,7 @@
       const necesitaIntensif = anual === 'TEP';
 
       html += '<tr>';
-      html += '<td>' + al.apellido + ', ' + al.nombre + '</td>';
+      html += '<td>' + al.apellido + ', ' + al.nombre + (al.recursa ? ' <span class="seg-tipo-r" title="Recursa esta materia">R</span>' : '') + '</td>';
 
       INSTANCIAS.forEach(inst => {
         if (inst.tipo === 'informe') {
