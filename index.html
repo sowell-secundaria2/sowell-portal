@@ -152,6 +152,7 @@
     .seg-curso { background: var(--amber-light); color: var(--amber-dark); }
     .seg-sindatos { background: var(--surface2); color: var(--text3); }
     .seg-tipo-r { font-size: 9px; color: var(--red); font-weight: 700; margin-left: 3px; }
+    .seg-tipo-i { font-size: 9px; color: var(--purple); font-weight: 700; margin-left: 3px; }
     .seg-nota { display: block; font-size: 10px; color: var(--text3); margin-top: 3px; }
     .nota-input { width: 54px; border: 0.5px solid var(--border); border-radius: 6px; padding: 5px 4px; font-size: 13px; font-family: 'DM Sans', sans-serif; text-align: center; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.12s; }
     .nota-input:focus { border-color: var(--navy-mid); }
@@ -1269,12 +1270,13 @@
     califRegistro = {};
 
     try {
-      // Cargar alumnos del curso, calificaciones existentes y recursantes de esa
-      // materia (Caso A: alumnos de otro curso que recursan esta materia acá)
-      const [resAlumnos, resCalif, resRecursantes] = await Promise.all([
+      // Cargar alumnos del curso, calificaciones existentes, recursantes (Caso A)
+      // y pendientes de solo-intensificación (Caso B) de esa materia
+      const [resAlumnos, resCalif, resRecursantes, resPendientes] = await Promise.all([
         fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getAlumnosPorCurso', curso }) }).then(r => r.json()),
         fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getCalificacionesPorCursoMateria', curso, materia }) }).then(r => r.json()),
-        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getRecursantesPorCursoMateria', curso, materia }) }).then(r => r.json())
+        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getRecursantesPorCursoMateria', curso, materia }) }).then(r => r.json()),
+        fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getPendientesPorCursoMateria', curso, materia }) }).then(r => r.json())
       ]);
 
       if (!resAlumnos.ok || !resAlumnos.datos || resAlumnos.datos.length === 0) {
@@ -1286,12 +1288,18 @@
       const idsBase = new Set(resAlumnos.datos.map(a => String(a.id)));
       const recursantesNuevos = recursantes.filter(a => !idsBase.has(String(a.id)));
       califActuales = resAlumnos.datos.concat(recursantesNuevos);
+
+      const pendientes = (resPendientes && resPendientes.ok) ? (resPendientes.datos || []) : [];
+      const idsBase2 = new Set(califActuales.map(a => String(a.id)));
+      const pendientesNuevos = pendientes.filter(a => !idsBase2.has(String(a.id)));
+      califActuales = califActuales.concat(pendientesNuevos);
+
       califActuales.sort((a, b) => a.apellido.localeCompare(b.apellido));
 
       // Construir registro inicial desde las calificaciones existentes
       const califExistentes = resCalif.ok ? (resCalif.datos || []) : [];
       califActuales.forEach(al => {
-        califRegistro[al.id] = { inf1: '', cuat1: '', intjul: '', inf2: '', cuat2: '', intdic: '', intfeb: '' };
+        califRegistro[al.id] = { inf1: '', cuat1: '', intjul: '', inf2: '', cuat2: '', intdic: '', intfeb: '', pendiente: !!al.pendiente };
         const instanciaMap = { '1er Informe Medio': 'inf1', '1er Cuatrimestre': 'cuat1', 'Intensificación Julio': 'intjul', '2do Informe Medio': 'inf2', '2do Cuatrimestre': 'cuat2', 'Intensificación Diciembre': 'intdic', 'Intensificación Feb/Mar': 'intfeb' };
         califExistentes.filter(c => String(c.id_alumno) === String(al.id)).forEach(c => {
           const key = instanciaMap[c.instancia];
@@ -1391,8 +1399,43 @@
     return { label: 'A intensif.', clase: 'estado-intensif' };
   }
 
+  // Para alumnos que solo INTENSIFICAN una materia de otro año (Caso B):
+  // no cursan, así que no hay cuatrimestres ni Anual -- la definitiva sale
+  // directo de Intensif. Dic./Feb-Mar, sin promediar nunca.
+  function calcularDefinitivaPendiente(intdic, intfeb) {
+    const feb = parseFloat(intfeb);
+    if (!isNaN(feb) && feb >= 4) return String(feb);
+    const dic = parseFloat(intdic);
+    if (!isNaN(dic) && dic >= 4) return String(dic);
+    return 'TEP';
+  }
+
+  function estadoPendiente(intdic, intfeb) {
+    const defin = calcularDefinitivaPendiente(intdic, intfeb);
+    if (defin !== 'TEP') return { label: 'Aprobado', clase: 'estado-aprobado' };
+    const feb = parseFloat(intfeb);
+    if (!isNaN(feb) && intfeb !== '' && feb < 4) return { label: 'Desaprobado', clase: 'estado-ted' };
+    const dic = parseFloat(intdic);
+    if (!isNaN(dic) && intdic !== '' && dic < 4) return { label: 'A Feb/Mar', clase: 'estado-intensif' };
+    return { label: 'A intensif.', clase: 'estado-intensif' };
+  }
+
   function onNotaChange(idAlumno, campo, val) {
     califRegistro[idAlumno][campo] = val.trim().toUpperCase();
+    const r = califRegistro[idAlumno];
+
+    // Alumno que solo intensifica (Caso B): cálculo simplificado, sin
+    // Anual ni gating de Dic/Feb (esos dos siempre están habilitados).
+    if (r.pendiente) {
+      const definEl = document.getElementById('defin-' + idAlumno);
+      const estEl = document.getElementById('est-' + idAlumno);
+      const defin = calcularDefinitivaPendiente(r.intdic, r.intfeb);
+      const est = estadoPendiente(r.intdic, r.intfeb);
+      if (definEl) { definEl.value = defin; definEl.className = 'nota-input calculada ' + claseNota(defin); }
+      if (estEl) { estEl.textContent = est.label; estEl.className = 'estado-calif ' + est.clase; }
+      return;
+    }
+
     // Re-renderizar solo las celdas calculadas de esa fila
     const r = califRegistro[idAlumno];
     const anual = calcularAnual(r.cuat1, r.cuat2);
@@ -1433,6 +1476,30 @@
 
     califActuales.forEach(al => {
       const r = califRegistro[al.id];
+
+      // Alumno que solo INTENSIFICA una materia de otro año (Caso B): no
+      // cursa, así que no tiene sentido mostrarle 1er/2do cuatrimestre,
+      // informes ni Julio -- solo Intensif. Dic./Feb-Mar, siempre habilitadas.
+      if (r.pendiente) {
+        const defin = calcularDefinitivaPendiente(r.intdic, r.intfeb);
+        const est = estadoPendiente(r.intdic, r.intfeb);
+        html += '<tr>';
+        html += '<td>' + al.apellido + ', ' + al.nombre + ' <span class="seg-tipo-i" title="Intensifica esta materia de ' + al.cursoOriginal + '">I</span></td>';
+        INSTANCIAS.forEach(inst => {
+          if (inst.id === 'intdic' || inst.id === 'intfeb') {
+            const val = r[inst.id] || '';
+            html += '<td><input id="' + inst.id + '-' + al.id + '" class="nota-input" type="number" min="4" max="10" step="1" value="' + val + '" placeholder="—" oninput="validarEntero(this,4,10)" onchange="onNotaChange(\'' + al.id + '\',\'' + inst.id + '\',this.value)"></td>';
+          } else if (inst.id === 'defin') {
+            html += '<td><input id="defin-' + al.id + '" class="nota-input calculada ' + claseNota(defin) + '" value="' + defin + '" disabled></td>';
+          } else {
+            html += '<td><input class="nota-input calculada" value="—" disabled></td>';
+          }
+        });
+        html += '<td><span id="est-' + al.id + '" class="estado-calif ' + est.clase + '">' + est.label + '</span></td>';
+        html += '</tr>';
+        return;
+      }
+
       const anual = calcularAnual(r.cuat1, r.cuat2);
       const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
       const est = estadoAlumno(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
@@ -1516,9 +1583,14 @@
         });
       });
       // Guardar también calculadas (mismo criterio: se manda vacío/'TEP'
-      // como nota vacía para que se borre si ya no corresponde)
-      const anual = calcularAnual(r.cuat1, r.cuat2);
-      const defin = calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
+      // como nota vacía para que se borre si ya no corresponde). Para
+      // alumnos "pendiente" (Caso B) no hay Anual, y la Definitiva sale
+      // directo de Dic/Feb (calcularDefinitivaPendiente), no de la fórmula
+      // normal -- que daría vacío porque no tienen cuatrimestres cargados.
+      const anual = r.pendiente ? '' : calcularAnual(r.cuat1, r.cuat2);
+      const defin = r.pendiente
+        ? calcularDefinitivaPendiente(r.intdic, r.intfeb)
+        : calcularDefinitiva(r.cuat1, r.intjul, r.cuat2, r.intdic, r.intfeb);
       registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Anual', nota: anual });
       registros.push({ id_alumno: al.id, materia, curso, docente: usuarioActual ? usuarioActual.nombre + ' ' + usuarioActual.apellido : 'Sistema', instancia: 'Calificación Definitiva', nota: (defin === 'TEP' ? '' : defin) });
     });
