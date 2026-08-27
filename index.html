@@ -609,6 +609,45 @@
     </div>
   </div>
 
+  <!-- BOLETINES / RITE (director/preceptor) -->
+  <div id="page-boletines" class="page">
+    <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
+      <div class="modulo-topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <i class="ti ti-file-certificate" style="color:#fff;font-size:20px"></i>
+          <div><div class="modulo-title">Boletines (RITE)</div><div class="modulo-sub" id="bol-sub">Sowell · Secundaria</div></div>
+        </div>
+        <div class="user-pill" style="cursor:default">
+          <div class="user-avatar" id="bol-avatar">?</div>
+          <span class="user-name" id="bol-nombre">Cargando...</span>
+        </div>
+      </div>
+
+      <div class="calif-controls">
+        <select id="bol-sel-curso" onchange="cargarAlumnosBoletin()">
+          <option value="">Seleccioná un curso</option>
+        </select>
+      </div>
+
+      <div id="bol-lista"><div class="cargando">Seleccioná un curso para ver los alumnos</div></div>
+
+      <!-- Panel de observaciones + generación, para un alumno a la vez -->
+      <div id="bol-panel" style="display:none;margin-top:14px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <p class="section-title" style="margin-bottom:0" id="bol-panel-titulo">Boletín</p>
+            <button class="btn-volver" style="margin-bottom:0" onclick="cerrarPanelBoletin()">Cerrar</button>
+          </div>
+          <div id="bol-panel-contenido"><div class="cargando">Cargando...</div></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px">
+            <button class="btn-guardar" id="btn-generar-boletin" onclick="guardarYGenerarBoletin()"><i class="ti ti-file-download"></i> Guardar y generar PDF</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- COMUNICADOS -->
   <div id="page-comunicados" class="page">
     <div class="modulo-wrap">
@@ -690,8 +729,8 @@
   const TODOS_LOS_CURSOS = ['1° A','1° B','1° C','2° A','2° B','2° C','3° A','3° B','3° C','4° A','4° B','4° C','5° A','5° B','5° C','6° A','6° B','6° C'];
 
   const NAV_POR_ROL = {
-    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Comunicados',page:'comunicados'}],
-    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Comunicados',page:'comunicados'}],
+    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Comunicados',page:'comunicados'}],
+    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Comunicados',page:'comunicados'}],
     docente:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'calificaciones'},{label:'Comunicados',page:'comunicados'}],
     familia:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'mis-calificaciones'},{label:'Sanciones',page:'mis-sanciones'}],
     alumno:    [{label:'Inicio',page:'inicio'}],
@@ -862,6 +901,22 @@
         const opt = document.createElement('option');
         opt.value = c; opt.textContent = c;
         selSeg.appendChild(opt);
+      });
+    }
+
+    // Inicializar Boletines (director/preceptor) -- mismos cursos que Seguimiento
+    if (u.rol === 'director' || u.rol === 'preceptor') {
+      document.getElementById('bol-avatar').textContent = iniciales;
+      document.getElementById('bol-nombre').textContent = u.nombre + ' ' + u.apellido;
+      document.getElementById('bol-sub').textContent = 'Sowell · ' + u.rol.charAt(0).toUpperCase() + u.rol.slice(1);
+      const selBol = document.getElementById('bol-sel-curso');
+      selBol.innerHTML = '<option value="">Seleccioná un curso</option>';
+      const cursosBol = u.rol === 'director' ? TODOS_LOS_CURSOS :
+        (u.cursos ? String(u.cursos).split(',').map(c => normalizarCurso(c.trim())) : []);
+      cursosBol.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        selBol.appendChild(opt);
       });
     }
 
@@ -2112,6 +2167,124 @@
       cont.innerHTML = html;
     } catch(err) {
       cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar el seguimiento</div>';
+    }
+  }
+
+  // ============================================================
+  // BOLETINES / RITE
+  // ============================================================
+  let bolAlumnosActuales = [];
+  let bolAlumnoAbierto = null; // { id, materias: [...] } -- datos del alumno con panel abierto
+
+  async function cargarAlumnosBoletin() {
+    const curso = document.getElementById('bol-sel-curso').value;
+    const cont = document.getElementById('bol-lista');
+    cerrarPanelBoletin();
+    if (!curso) { cont.innerHTML = '<div class="cargando">Seleccioná un curso para ver los alumnos</div>'; return; }
+    cont.innerHTML = '<div class="cargando"><i class="ti ti-loader"></i> Cargando alumnos...</div>';
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getAlumnosPorCurso', curso }) });
+      const data = await res.json();
+      if (!data.ok || !data.datos || data.datos.length === 0) {
+        cont.innerHTML = '<div class="cargando">No se encontraron alumnos para ' + curso + '.</div>';
+        bolAlumnosActuales = [];
+        return;
+      }
+      bolAlumnosActuales = data.datos;
+      cont.innerHTML = bolAlumnosActuales.map(al =>
+        '<div class="alumno-row" style="grid-template-columns:1fr auto">' +
+          '<div class="alumno-name">' + al.apellido + ', ' + al.nombre + '</div>' +
+          '<button class="btn-guardar" style="padding:6px 14px;font-size:12px" onclick="abrirPanelBoletin(\'' + al.id + '\')"><i class="ti ti-file-certificate"></i> Boletín</button>' +
+        '</div>'
+      ).join('');
+    } catch(err) {
+      cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error al cargar alumnos. Revisá la conexión.</div>';
+    }
+  }
+
+  function cerrarPanelBoletin() {
+    bolAlumnoAbierto = null;
+    document.getElementById('bol-panel').style.display = 'none';
+  }
+
+  async function abrirPanelBoletin(idAlumno) {
+    const panel = document.getElementById('bol-panel');
+    const cont = document.getElementById('bol-panel-contenido');
+    panel.style.display = 'block';
+    cont.innerHTML = '<div class="cargando"><i class="ti ti-loader"></i> Cargando datos del alumno...</div>';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'getDatosBoletin', id_alumno: idAlumno }) });
+      const data = await res.json();
+      if (!data.ok) { cont.innerHTML = '<div class="cargando" style="color:var(--red)">' + (data.mensaje || 'Error al cargar') + '</div>'; return; }
+
+      bolAlumnoAbierto = { id: idAlumno, datos: data.datos };
+      const d = data.datos;
+      document.getElementById('bol-panel-titulo').textContent = 'Boletín · ' + d.alumno.apellido + ', ' + d.alumno.nombre + ' · ' + d.alumno.curso;
+
+      let html = '<p style="font-size:12px;color:var(--text2);margin-bottom:10px">Revisá las observaciones de cada materia antes de generar el PDF (se guardan al generar).</p>';
+      html += '<div class="calif-tabla-wrap"><table class="calif-tabla"><thead><tr><th>Materia</th><th>Tipo</th><th>Def.</th><th>Obs. 1°C</th><th>Obs. 2°C</th></tr></thead><tbody>';
+      d.materias.forEach((m, i) => {
+        html += '<tr>' +
+          '<td>' + m.materia + (m.tipo === 'R' ? ' <span class="seg-tipo-r">R</span>' : '') + '</td>' +
+          '<td>' + m.tipo + '</td>' +
+          '<td>' + (m.defin || '—') + '</td>' +
+          '<td><input type="text" class="com-input" style="font-size:12px;padding:5px 8px" id="bol-obs1-' + i + '" value="' + (m.obs1 || '').replace(/"/g,'&quot;') + '"></td>' +
+          '<td><input type="text" class="com-input" style="font-size:12px;padding:5px 8px" id="bol-obs2-' + i + '" value="' + (m.obs2 || '').replace(/"/g,'&quot;') + '"></td>' +
+        '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<p style="font-size:11px;color:var(--text3);margin-top:10px">Inasistencias calculadas: 1°C ' + d.inasistencias.inasistencias1 + ' (' + d.inasistencias.diasHabiles1 + ' días hábiles) · 2°C ' + d.inasistencias.inasistencias2 + ' (' + d.inasistencias.diasHabiles2 + ' días hábiles)</p>';
+      cont.innerHTML = html;
+    } catch(err) {
+      cont.innerHTML = '<div class="cargando" style="color:var(--red)">Error de conexión. Intentá de nuevo.</div>';
+      console.error(err);
+    }
+  }
+
+  async function guardarYGenerarBoletin() {
+    if (!bolAlumnoAbierto) return;
+    const btn = document.getElementById('btn-generar-boletin');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader"></i> Generando...';
+
+    const observaciones = bolAlumnoAbierto.datos.materias.map((m, i) => ({
+      materia: m.materia,
+      obs1: (document.getElementById('bol-obs1-' + i) || {}).value || '',
+      obs2: (document.getElementById('bol-obs2-' + i) || {}).value || ''
+    }));
+
+    try {
+      await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'guardarObservacionesBoletin', id_alumno: bolAlumnoAbierto.id, observaciones }) });
+
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ accion: 'generarBoletinPDF', id_alumno: bolAlumnoAbierto.id }) });
+      const data = await res.json();
+      if (!data.ok || !data.datos || !data.datos.base64) {
+        mostrarToast('Error al generar el boletín: ' + (data.mensaje || 'sin datos'), 'error');
+        return;
+      }
+
+      const byteChars = atob(data.datos.base64);
+      const byteNums = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([new Uint8Array(byteNums)], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.datos.nombreArchivo || 'boletin.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      mostrarToast('Boletín generado correctamente ✓', 'ok');
+    } catch(err) {
+      mostrarToast('Error de conexión. Intentá de nuevo.', 'error');
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-file-download"></i> Guardar y generar PDF';
     }
   }
 </script>
