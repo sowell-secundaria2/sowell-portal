@@ -359,7 +359,7 @@
           <button class="qa-btn" onclick="irAPagina('asistencia')"><i class="ti ti-clipboard-check"></i> Asistencia</button>
           <button class="qa-btn" onclick="irAPagina('comunicados')"><i class="ti ti-speakerphone"></i> Comunicado</button>
           <button class="qa-btn" onclick="irAPagina('sanciones')"><i class="ti ti-alert-triangle"></i> Sanción</button>
-          <button class="qa-btn"><i class="ti ti-file-text"></i> Documentos</button>
+          <button class="qa-btn" onclick="irAPagina('constancias')"><i class="ti ti-file-text"></i> Documentos</button>
         </div>
       </div>
     </main>
@@ -648,6 +648,55 @@
     </div>
   </div>
 
+  <!-- CONSTANCIAS (director/preceptor) -->
+  <div id="page-constancias" class="page">
+    <div class="modulo-wrap">
+      <button class="btn-volver" onclick="irAPagina('inicio')"><i class="ti ti-arrow-left"></i> Volver a Inicio</button>
+      <div class="modulo-topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <i class="ti ti-file-text" style="color:#fff;font-size:20px"></i>
+          <div><div class="modulo-title">Constancias</div><div class="modulo-sub" id="const-sub">Sowell · Secundaria</div></div>
+        </div>
+        <div class="user-pill" style="cursor:default">
+          <div class="user-avatar" id="const-avatar">?</div>
+          <span class="user-name" id="const-nombre">Cargando...</span>
+        </div>
+      </div>
+
+      <div class="com-form">
+        <p class="section-title" style="margin-bottom:14px">Nueva constancia</p>
+
+        <div class="com-field">
+          <label class="com-label">Alumno (búsqueda)</label>
+          <input class="com-input" type="text" id="const-buscar-alumno" placeholder="Escribí apellido o nombre..." oninput="buscarAlumnoConstancia(this.value)">
+          <div id="const-resultados-alumno" style="margin-top:6px"></div>
+        </div>
+
+        <div class="com-preview" id="const-preview" style="display:none">
+          <strong>Alumno seleccionado</strong>
+          <span id="const-preview-texto">—</span>
+        </div>
+
+        <div class="com-field">
+          <label class="com-label">Tipo de constancia</label>
+          <select class="com-select" id="const-tipo" onchange="onTipoConstanciaChange()">
+            <option value="">— Seleccioná —</option>
+          </select>
+        </div>
+
+        <div id="const-campos"></div>
+
+        <p style="font-size:11px;color:var(--text3);margin-bottom:14px">El DNI, el curso y la fecha se completan automáticamente.</p>
+
+        <div style="display:flex;justify-content:flex-end">
+          <button class="btn-guardar" id="btn-generar-const" onclick="generarConstanciaPDF()">
+            <i class="ti ti-file-download"></i> Generar PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- COMUNICADOS -->
   <div id="page-comunicados" class="page">
     <div class="modulo-wrap">
@@ -729,8 +778,8 @@
   const TODOS_LOS_CURSOS = ['1° A','1° B','1° C','2° A','2° B','2° C','3° A','3° B','3° C','4° A','4° B','4° C','5° A','5° B','5° C','6° A','6° B','6° C'];
 
   const NAV_POR_ROL = {
-    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Comunicados',page:'comunicados'}],
-    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Comunicados',page:'comunicados'}],
+    director:  [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Calificaciones',page:'calificaciones'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Constancias',page:'constancias'},{label:'Comunicados',page:'comunicados'}],
+    preceptor: [{label:'Inicio',page:'inicio'},{label:'Asistencia',page:'asistencia'},{label:'Sanciones',page:'sanciones'},{label:'Seguimiento',page:'seguimiento'},{label:'Boletines',page:'boletines'},{label:'Constancias',page:'constancias'},{label:'Comunicados',page:'comunicados'}],
     docente:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'calificaciones'},{label:'Comunicados',page:'comunicados'}],
     familia:   [{label:'Inicio',page:'inicio'},{label:'Calificaciones',page:'mis-calificaciones'},{label:'Sanciones',page:'mis-sanciones'}],
     alumno:    [{label:'Inicio',page:'inicio'}],
@@ -918,6 +967,14 @@
         opt.value = c; opt.textContent = c;
         selBol.appendChild(opt);
       });
+    }
+
+    // Inicializar Constancias (director/preceptor)
+    if (u.rol === 'director' || u.rol === 'preceptor') {
+      document.getElementById('const-avatar').textContent = iniciales;
+      document.getElementById('const-nombre').textContent = u.nombre + ' ' + u.apellido;
+      document.getElementById('const-sub').textContent = 'Sowell · ' + u.rol.charAt(0).toUpperCase() + u.rol.slice(1);
+      inicializarConstancias();
     }
 
     inicializarFecha();
@@ -2285,6 +2342,221 @@
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<i class="ti ti-file-download"></i> Guardar y generar PDF';
+    }
+  }
+
+  // ============================================================
+  // CONSTANCIAS (director/preceptor)
+  // ============================================================
+  // Definición de los 6 tipos de constancia. La clave de cada tipo debe
+  // coincidir con las claves de CONSTANCIA_DOC_IDS en Code.gs. Cada campo
+  // variable usa como "clave" el nombre del placeholder {{clave}} de la
+  // plantilla de Google Docs. Si en alguna plantilla el placeholder se
+  // llama distinto, solo hay que corregir la "clave" acá.
+  // Los datos del alumno (nombre, DNI, curso) y la fecha NO se piden:
+  // los completa el servidor.
+  const CAMPOS_CONSTANCIA = {
+    alumno_regular: {
+      label: 'Alumno Regular',
+      campos: [
+        { clave: 'turno', label: 'Turno', tipo: 'select', opciones: ['Mañana', 'Tarde'] },
+        { clave: 'entidad_destino', label: 'Presentar ante', tipo: 'text', placeholder: 'Ej: ANSES, empresa, obra social...', valorInicial: 'quien corresponda' }
+      ]
+    },
+    general: {
+      label: 'Constancia General (texto libre)',
+      campos: [
+        { clave: 'texto', label: 'Texto de la constancia', tipo: 'textarea', placeholder: 'Escribí lo que debe constar en la constancia...' }
+      ]
+    },
+    vacante: {
+      label: 'Comprobante de Vacante',
+      campos: [
+        { clave: 'anio_vacante', label: 'Año para el que se reserva la vacante', tipo: 'select', opciones: ['1°', '2°', '3°', '4°', '5°', '6°'] }
+      ]
+    },
+    analitico_completo: {
+      label: 'Certificado Analítico en Trámite — Completo (1° a 6°)',
+      campos: []
+    },
+    analitico_parcial: {
+      label: 'Certificado Analítico en Trámite — Parcial (año puntual)',
+      campos: [
+        { clave: 'anio_cursado', label: 'Año cursado', tipo: 'select', opciones: ['1°', '2°', '3°', '4°', '5°', '6°'] }
+      ]
+    },
+    solicitud_pase: {
+      label: 'Solicitud de Pase (BORRADOR)',
+      campos: [
+        { clave: 'institucion_destino', label: 'Institución de destino', tipo: 'text', placeholder: 'Nombre de la escuela a la que se pasa' },
+        { clave: 'motivo', label: 'Motivo', tipo: 'textarea', placeholder: 'Motivo del pase...' }
+      ]
+    }
+  };
+
+  let constAlumnosCache = [];        // cache de alumnos para búsqueda
+  let constResultadosBusqueda = [];  // resultados de la última búsqueda (se eligen por posición)
+  let constAlumnoSeleccionado = null; // { id, nombre, curso }
+
+  function inicializarConstancias() {
+    const sel = document.getElementById('const-tipo');
+    sel.innerHTML = '<option value="">— Seleccioná —</option>';
+    Object.keys(CAMPOS_CONSTANCIA).forEach(clave => {
+      const opt = document.createElement('option');
+      opt.value = clave;
+      opt.textContent = CAMPOS_CONSTANCIA[clave].label;
+      sel.appendChild(opt);
+    });
+    constAlumnosCache = [];
+    constResultadosBusqueda = [];
+    constAlumnoSeleccionado = null;
+  }
+
+  async function buscarAlumnoConstancia(query) {
+    const cont = document.getElementById('const-resultados-alumno');
+    if (query.length < 2) { cont.innerHTML = ''; return; }
+
+    if (constAlumnosCache.length === 0) {
+      cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0">Cargando alumnos...</div>';
+      const cursos = obtenerCursosSanciones();
+      const resultados = await Promise.all(
+        cursos.map(c => fetch(SCRIPT_URL, { method:'POST', body: JSON.stringify({ accion:'getAlumnosPorCurso', curso: c }) }).then(r=>r.json()).then(d => (d.datos||[]).map(a=>({...a, curso:c}))).catch(() => []))
+      );
+      constAlumnosCache = resultados.flat();
+    }
+
+    const q = query.toLowerCase();
+    constResultadosBusqueda = constAlumnosCache.filter(a =>
+      String(a.apellido).toLowerCase().includes(q) || String(a.nombre).toLowerCase().includes(q)
+    ).slice(0, 8);
+
+    if (constResultadosBusqueda.length === 0) {
+      cont.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:6px 0">No se encontraron alumnos</div>';
+      return;
+    }
+
+    // Se elige por posición en la lista (no se arma el nombre dentro del
+    // onclick), así apellidos con apóstrofe no rompen el HTML.
+    cont.innerHTML = constResultadosBusqueda.map((a, i) =>
+      '<div style="display:flex;justify-content:space-between;padding:7px 10px;border:0.5px solid var(--border);border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:12px" onclick="seleccionarAlumnoConstancia(' + i + ')">' +
+        '<span>' + a.apellido + ', ' + a.nombre + '</span>' +
+        '<span style="font-size:11px;color:var(--text3)">' + a.curso + '</span>' +
+      '</div>'
+    ).join('');
+  }
+
+  function seleccionarAlumnoConstancia(i) {
+    const a = constResultadosBusqueda[i];
+    if (!a) return;
+    const nombre = a.apellido + ', ' + a.nombre;
+    constAlumnoSeleccionado = { id: a.id, nombre, curso: a.curso };
+    document.getElementById('const-buscar-alumno').value = nombre;
+    document.getElementById('const-resultados-alumno').innerHTML = '';
+    document.getElementById('const-preview').style.display = 'block';
+    document.getElementById('const-preview-texto').textContent = nombre + ' · ' + a.curso;
+  }
+
+  // Arma los campos variables del tipo elegido (y los vacía si no hay tipo).
+  function onTipoConstanciaChange() {
+    const tipo = document.getElementById('const-tipo').value;
+    const cont = document.getElementById('const-campos');
+    cont.innerHTML = '';
+    if (!tipo) return;
+
+    CAMPOS_CONSTANCIA[tipo].campos.forEach(c => {
+      const wrap = document.createElement('div');
+      wrap.className = 'com-field';
+
+      const label = document.createElement('label');
+      label.className = 'com-label';
+      label.textContent = c.label;
+      wrap.appendChild(label);
+
+      let input;
+      if (c.tipo === 'select') {
+        input = document.createElement('select');
+        input.className = 'com-select';
+        (c.opciones || []).forEach(op => {
+          const opt = document.createElement('option');
+          opt.value = op; opt.textContent = op;
+          input.appendChild(opt);
+        });
+      } else if (c.tipo === 'textarea') {
+        input = document.createElement('textarea');
+        input.className = 'com-textarea';
+        input.style.minHeight = '90px';
+        input.placeholder = c.placeholder || '';
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'com-input';
+        input.placeholder = c.placeholder || '';
+      }
+      if (c.valorInicial) input.value = c.valorInicial;
+      input.id = 'const-campo-' + c.clave;
+      wrap.appendChild(input);
+      cont.appendChild(wrap);
+    });
+
+    if (CAMPOS_CONSTANCIA[tipo].campos.length === 0) {
+      cont.innerHTML = '<p style="font-size:12px;color:var(--text2);margin-bottom:14px">Este tipo no requiere datos adicionales.</p>';
+    }
+  }
+
+  async function generarConstanciaPDF() {
+    if (!constAlumnoSeleccionado) { mostrarToast('Buscá y seleccioná un alumno', 'error'); return; }
+    const tipo = document.getElementById('const-tipo').value;
+    if (!tipo) { mostrarToast('Seleccioná el tipo de constancia', 'error'); return; }
+
+    // Leer los campos variables del tipo elegido
+    const campos = {};
+    for (const c of CAMPOS_CONSTANCIA[tipo].campos) {
+      const el = document.getElementById('const-campo-' + c.clave);
+      const val = el ? el.value.trim() : '';
+      if (!val) { mostrarToast('Completá el campo: ' + c.label, 'error'); return; }
+      campos[c.clave] = val;
+    }
+
+    const btn = document.getElementById('btn-generar-const');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader"></i> Generando...';
+
+    try {
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          accion: 'generarConstancia',
+          tipo,
+          id_alumno: constAlumnoSeleccionado.id,
+          campos
+        })
+      });
+      const data = await res.json();
+      if (!data.ok || !data.datos || !data.datos.base64) {
+        mostrarToast('Error al generar la constancia: ' + (data.mensaje || 'sin datos'), 'error');
+        return;
+      }
+
+      const byteChars = atob(data.datos.base64);
+      const byteNums = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([new Uint8Array(byteNums)], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.datos.nombreArchivo || 'constancia.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      mostrarToast('Constancia generada correctamente ✓', 'ok');
+    } catch(err) {
+      mostrarToast('Error de conexión. Intentá de nuevo.', 'error');
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-file-download"></i> Generar PDF';
     }
   }
 </script>
