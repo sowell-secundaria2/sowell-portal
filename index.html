@@ -2355,7 +2355,7 @@
   // llama distinto, solo hay que corregir la "clave" acá.
   // Los datos del alumno (nombre, DNI, curso) y la fecha NO se piden:
   // los completa el servidor.
-  const CAMPOS_CONSTANCIA = {
+const CAMPOS_CONSTANCIA = {
     alumno_regular: {
       label: 'Alumno Regular',
       campos: [
@@ -2366,30 +2366,38 @@
     general: {
       label: 'Constancia General (texto libre)',
       campos: [
-        { clave: 'texto', label: 'Texto de la constancia', tipo: 'textarea', placeholder: 'Escribí lo que debe constar en la constancia...' }
+        { clave: 'texto_libre', label: 'Texto de la constancia', tipo: 'textarea', placeholder: 'Escribí lo que debe constar en la constancia...' },
+        { clave: 'entidad_destino', label: 'Presentar ante', tipo: 'text', placeholder: 'Ej: ANSES, empresa, obra social...', valorInicial: 'quien corresponda' }
       ]
     },
     vacante: {
       label: 'Comprobante de Vacante',
       campos: [
-        { clave: 'anio_vacante', label: 'Año para el que se reserva la vacante', tipo: 'select', opciones: ['1°', '2°', '3°', '4°', '5°', '6°'] }
+        // La clave "curso" pisa al curso actual del alumno que completa el servidor:
+        // acá se elige el año que va a cursar, no el que cursa hoy.
+        { clave: 'curso', label: 'Año que cursará', tipo: 'select', opciones: ['1° año', '2° año', '3° año', '4° año', '5° año', '6° año'] },
+        { clave: 'anio_vacante', label: 'Ciclo lectivo de la vacante', tipo: 'text', placeholder: 'Ej: 2027', valorInicial: String(new Date().getFullYear() + 1) }
       ]
     },
     analitico_completo: {
       label: 'Certificado Analítico en Trámite — Completo (1° a 6°)',
-      campos: []
+      campos: [
+        { clave: 'materias_adeuda', label: 'Materias que adeuda', tipo: 'text', opcional: true, valorVacio: 'Ninguna', placeholder: 'Separadas por coma. Dejar vacío si no adeuda ninguna.' }
+      ]
     },
     analitico_parcial: {
       label: 'Certificado Analítico en Trámite — Parcial (año puntual)',
       campos: [
-        { clave: 'anio_cursado', label: 'Año cursado', tipo: 'select', opciones: ['1°', '2°', '3°', '4°', '5°', '6°'] }
+        { clave: 'anio_curso', label: 'Año cursado', tipo: 'select', opciones: ['1°', '2°', '3°', '4°', '5°', '6°'] },
+        { clave: 'materias_adeuda', label: 'Materias que adeuda', tipo: 'text', opcional: true, valorVacio: 'Ninguna', placeholder: 'Separadas por coma. Dejar vacío si no adeuda ninguna.' }
       ]
     },
     solicitud_pase: {
       label: 'Solicitud de Pase (BORRADOR)',
       campos: [
-        { clave: 'institucion_destino', label: 'Institución de destino', tipo: 'text', placeholder: 'Nombre de la escuela a la que se pasa' },
-        { clave: 'motivo', label: 'Motivo', tipo: 'textarea', placeholder: 'Motivo del pase...' }
+        { clave: 'establecimiento_destino', label: 'Institución de destino', tipo: 'text', placeholder: 'Nombre de la escuela a la que se pasa' },
+        { clave: 'motivo_pase', label: 'Motivo', tipo: 'textarea', placeholder: 'Motivo del pase...' },
+        { clave: 'materias_adeuda', label: 'Pases pendientes / materias adeudadas', tipo: 'text', opcional: true, valorVacio: 'Ninguna', placeholder: 'Separadas por coma. Dejar vacío si no hay.' }
       ]
     }
   };
@@ -2469,7 +2477,7 @@
 
       const label = document.createElement('label');
       label.className = 'com-label';
-      label.textContent = c.label;
+      label.textContent = c.label + (c.opcional ? ' (opcional)' : '');
       wrap.appendChild(label);
 
       let input;
@@ -2508,11 +2516,13 @@
     const tipo = document.getElementById('const-tipo').value;
     if (!tipo) { mostrarToast('Seleccioná el tipo de constancia', 'error'); return; }
 
-    // Leer los campos variables del tipo elegido
+    // Leer los campos variables del tipo elegido. Los campos opcionales
+    // que queden vacíos se mandan con su valor por defecto ("Ninguna").
     const campos = {};
     for (const c of CAMPOS_CONSTANCIA[tipo].campos) {
       const el = document.getElementById('const-campo-' + c.clave);
-      const val = el ? el.value.trim() : '';
+      let val = el ? el.value.trim() : '';
+      if (!val && c.opcional) val = c.valorVacio || 'Ninguna';
       if (!val) { mostrarToast('Completá el campo: ' + c.label, 'error'); return; }
       campos[c.clave] = val;
     }
